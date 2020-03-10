@@ -20,8 +20,8 @@ from tqdm import tqdm
 import json
 
 
-np.random.seed = 42
-random.seet = 42
+np.random.seed(42)
+#random.seet = 42
 
 def extract_annotations(path):
     # print(annotation_path)
@@ -200,7 +200,8 @@ class CarPartDataset(utils.Dataset):
 
 if __name__ == '__main__':
     from keras import backend as K
-    print(K.tensorflow_backend._get_available_gpus())
+    ### versione di TF non GPU
+    #print(K.tensorflow_backend._get_available_gpus())
 
     import argparse
 
