@@ -220,6 +220,13 @@ if __name__ == '__main__':
 
     parser.add_argument('--checkpoint', required=True,
                         help='the folder where the checkpoints are saved')
+
+    parser.add_argument('--epochs', required=False,
+                        help='number of epochs to train')
+
+    parser.add_argument('--lr', required=False,
+                        help='the learning rate of training')
+                        
     # parser.
 
     args = parser.parse_args()
@@ -272,10 +279,22 @@ if __name__ == '__main__':
     else:
         model.load_weights(model.find_last(), by_name=True)
 
+
+
+    if(args.epochs):
+        epoche = args.epochs
+    else:
+        epoche = 40
+    
+    if(args.lr):
+        learningrate = args.lr
+    else:
+        learningrate = config.LEARNING_RATE
+    
     print("Training network heads")
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
-                epochs=40,
+                learning_rate=learningrate, #config.LEARNING_RATE,
+                epochs=epoche,
                 layers='heads')
 
     # Training - Stage 2
