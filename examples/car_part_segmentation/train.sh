@@ -9,4 +9,6 @@ annotations_path=$data_path/car_part_annotations/Annotations_Part
 python car_part.py\
  --images_path $images_path\
  --annotations $annotations_path\
- --checkpoint $DIR/logs/ --weights imagenet
+ --checkpoint $DIR/logs/ --weights imagenet\
+ --trainpercent 0.1\
+ --valpercent 0.1

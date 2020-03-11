@@ -226,6 +226,11 @@ if __name__ == '__main__':
 
     parser.add_argument('--lr', required=False,
                         help='the learning rate of training')
+
+    parser.add_argument('--trainpercent', required=False,
+                        help='the percentage of training set')
+    parser.add_argument('--valpercent', required=False,
+                        help='the percentage of validation set')
                         
     # parser.
 
@@ -238,8 +243,16 @@ if __name__ == '__main__':
     images_path = Path(args.images_path)
     annotations_path = Path(args.annotations_path)
 
+    if(args.trainpercent):
+        tr_percent = float(args.trainpercent)
+    else:
+        tr_percent = None
+    if(args.valpercent):
+        val_percent = float(args.valpercent)
+    else:
+        val_percent = None
     dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-        images_path, annotations_path
+        images_path, annotations_path, tr_percent, val_percent
     )
     print('finished loading the dataset')
 
