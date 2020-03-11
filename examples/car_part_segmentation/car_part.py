@@ -251,11 +251,12 @@ if __name__ == '__main__':
         val_percent = float(args.valpercent)
     else:
         val_percent = None
+    print(tr_percent)
     dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-        images_path, annotations_path, tr_percent, val_percent
+        images_path, annotations_path#, tr_percent, val_percent
     )
     print('finished loading the dataset')
-
+    sys.exit()
     print(parts_idx_dict)
     with open('parts_idx_dict.json', 'w') as f:
         json.dump(parts_idx_dict, f)
@@ -297,7 +298,7 @@ if __name__ == '__main__':
     if(args.epochs):
         epoche = args.epochs
     else:
-        epoche = 40
+        epoche = 1
     
     if(args.lr):
         learningrate = args.lr

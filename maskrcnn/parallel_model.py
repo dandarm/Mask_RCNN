@@ -1,11 +1,9 @@
 """
 Mask R-CNN
 Multi-GPU Support for Keras.
-
 Copyright (c) 2017 Matterport, Inc.
 Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
-
 Ideas and a small code snippets from these sources:
 https://github.com/fchollet/keras/issues/2436
 https://medium.com/@kuza55/transparent-multi-gpu-training-on-tensorflow-with-keras-8b0016fd9012
@@ -69,7 +67,7 @@ class ParallelModel(KM.Model):
         # Run the model call() on each GPU to place the ops there
         for i in range(self.gpu_count):
             with tf.device('/gpu:%d' % i):
-                with tf.name_scope('tower_%d' % i):
+                with tf.compat.v1.name_scope('tower_%d' % i):
                     # Run a slice of inputs through this replica
                     zipped_inputs = zip(self.inner_model.input_names,
                                         self.inner_model.inputs)
@@ -96,8 +94,7 @@ class ParallelModel(KM.Model):
                 # Keras expects losses and metrics to be scalars.
                 if K.int_shape(outputs[0]) == ():
                     # Average
-                    m = KL.Lambda(lambda o: tf.add_n(
-                        o) / len(outputs), name=name)(outputs)
+                    m = KL.Lambda(lambda o: tf.add_n(o) / len(outputs), name=name)(outputs)
                 else:
                     # Concatenate
                     m = KL.Concatenate(axis=0, name=name)(outputs)
@@ -130,7 +127,7 @@ if __name__ == "__main__":
         # Reset default graph. Keras leaves old ops in the graph,
         # which are ignored for execution but clutter graph
         # visualization in TensorBoard.
-        tf.reset_default_graph()
+        tf.compat.v1.reset_default_graph()
 
         inputs = KL.Input(shape=x_train.shape[1:], name="input_image")
         x = KL.Conv2D(32, (3, 3), activation='relu', padding="same",
