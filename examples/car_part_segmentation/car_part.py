@@ -200,7 +200,7 @@ class CarPartDataset(utils.Dataset):
 
 
 if __name__ == '__main__':
-    from keras import backend as K
+    #from keras import backend as K
     ### versione di TF non GPU
     #print(K.tensorflow_backend._get_available_gpus())
 
