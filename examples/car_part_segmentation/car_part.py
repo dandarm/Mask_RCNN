@@ -125,6 +125,7 @@ def prepare_datasets(images_path, images_annotations_path,
     results, parts_idx_dict = preprocess_dataset(
         images_path, images_annotations_files, filter)
 
+    print(f'len results {len(results)}')
     train_split = int(len(results) * train_perc)
     val_split = int(len(results) * val_perc)
     print(
