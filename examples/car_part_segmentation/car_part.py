@@ -257,7 +257,7 @@ if __name__ == '__main__':
         images_path, annotations_path#, tr_percent, val_percent
     )
     print('finished loading the dataset')
-    sys.exit()
+    
     print(parts_idx_dict)
     with open('parts_idx_dict.json', 'w') as f:
         json.dump(parts_idx_dict, f)
