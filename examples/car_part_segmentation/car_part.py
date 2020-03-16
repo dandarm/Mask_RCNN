@@ -254,7 +254,7 @@ if __name__ == '__main__':
         val_percent = None
     print(tr_percent)
     dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-        images_path, annotations_path#, tr_percent, val_percent
+        images_path, annotations_path, tr_percent, val_percent
     )
     print('finished loading the dataset')
     
