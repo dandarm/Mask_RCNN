@@ -18,11 +18,17 @@ from maskrcnn.config import Config
 import imgaug.augmenters as iaa
 from tqdm import tqdm
 import json
+from PIL import Image, ImageDraw
+
+from pycocotools.coco import COCO
+from collections import defaultdict
+import random
 
 
 np.random.seed(42)
 #random.seet = 42
 
+'''
 def extract_annotations(path):
     # print(annotation_path)
     annotations = sio.loadmat(path)['anno']
@@ -51,6 +57,7 @@ def extract_annotations(path):
             {'class_name': classname, 'mask': mask, "parts": parts_list})
 
     return objects_list
+
 
 
 def preprocess_dataset(images_path, annotations_path, filter={'car'}):
@@ -144,6 +151,121 @@ def prepare_datasets(images_path, images_annotations_path,
     dataset_test.prepare()
 
     return dataset_train, dataset_val, dataset_test, parts_idx_dict
+'''  
+
+def getCatId_fromImgId(img_id, imgToAnns):
+    return [d['category_id'] for d in imgToAnns[img_id]]
+
+def dist_tot(img_ids, imgToAnns, num_categories_target):
+    #[[x,l.count(x)] for x in set(l)]
+    num_cat = defaultdict(int) #zero default value
+    for id in img_ids:
+        cats_in_img = getCatId_fromImgId(id, imgToAnns)
+        for cat in cats_in_img:
+            num_cat[cat] += 1
+
+    sq_dist = [(num_cat[k] - v)*(num_cat[k] - v) for k,v in num_categories_target.items()]
+    distanze = 0#[round((num_cat[k] - v)/v, 3) for k,v in num_categories_target.items()]
+    return np.sqrt(sum(sq_dist))#, distanze
+
+def add_img(trial_set, remaining_set):
+    to_add = random.choice(remaining_set)
+    trial_set.append(to_add)
+    remaining_set.remove(to_add)
+    return to_add
+def rem_img(trial_set, remaining_set):
+    to_remove = random.choice(trial_set)
+    trial_set.remove(to_remove)
+    remaining_set.append(to_remove)
+    return to_remove
+def reset_add(trial_set, remaining_set, removed):
+    for r in removed:
+        trial_set.append(r)
+        remaining_set.remove(r)
+def reset_rem(trial_set, remaining_set, added):
+    for a in added:
+        trial_set.remove(a)
+        remaining_set.append(a)
+
+def split_dataset_balanced(part_annotation_path, set_perc=0.7):
+    ds = COCO(part_annotation_path)
+    imgToAnns = ds.imgToAnns
+
+    num_categories_target = {cat_id:round(len(images)*set_perc) for cat_id, images in ds.catToImgs.items()}
+
+    #parto con un insieme iniziale
+    all_img_ids = ds.getImgIds()
+    total_imgs = len(all_img_ids)
+    num_start_set = round(0.7 * total_imgs)
+    start_imgs = random.sample(all_img_ids, num_start_set)
+
+    #dist_previous = dist_tot(start_imgs, imgToAnns, num_categories_target)
+
+    add_trials = 10
+    remove_trials = 10
+    tot_trials = 10
+    best_change = ()
+    epsilon = 0.01
+    distances = {}
+    trial_set = start_imgs
+    remaining_set = list(filter(lambda x: x in start_imgs, all_img_ids))
+
+    for _ in range(tot_trials):
+        
+
+        added = []
+        for _ in range(add_trials):
+            ai = add_img(trial_set, remaining_set)
+            added.append(ai)
+            #dist = dist_tot(trial_set, imgToAnns, num_categories_target)
+            #distances[dist] = (ai, None)
+
+            removed = []
+            for _ in range(remove_trials):
+                ri = rem_img(trial_set, remaining_set)
+                removed.append(ri)
+                dist = dist_tot(trial_set, imgToAnns, num_categories_target)
+                distances[dist] = (ai, ri)
+
+            reset_add(trial_set, remaining_set, removed)            
+
+        reset_rem(trial_set, remaining_set, added) 
+
+        min_over_dist = min(distances.keys())
+        best_change[min_over_dist] = distances[min_over_dist]
+        
+                
+
+            
+
+    #print(f'Distanza: {dist:.2f}')
+    return trial_set
+
+
+
+
+#    for cat_id, cat_images in ds.catToImgs.items():
+ #       tot_img_cat = len(cat_images)
+  #      Num_imgtrain = train_perc * tot_img_cat
+   #     Num_imgval = val_perc * tot_img_cat
+        
+
+
+
+
+
+def prepare_datasets(part_annotation_path, images_path):
+
+
+
+    dataset_train = CarPartDataset()
+    dataset_train.load_dataset(part_annotation_path, images_path)
+    dataset_train.prepare()
+
+    #dataset_val = CarPartDataset()
+    #dataset_val.load_dataset(part_annotation_path, images_path)
+    #dataset_val.prepare()
+
 
 
 class CarPartConfig(Config):
@@ -170,37 +292,108 @@ class CarPartConfig(Config):
 
 class CarPartDataset(utils.Dataset):
 
-    def load_dataset(self, parts_idx_dict, preprocessed_images):
+    def load_dataset(self, annotation_json, images_dir):
         """
-
-        classes: in case of None it loads all the classes otherwise
-            it filter on a particular class
+            Load the coco-like dataset from json
+        Args:
+            annotation_json: coco annotations file path
+            images_dir: images directory
         """
-        for part_name, i in parts_idx_dict.items():
-            self.add_class('car_parts', i, part_name)
+        json_file = open(annotation_json)
+        coco_data = json.load(json_file)
+        json_file.close()
 
-        for file_name, image_path, masks, classes in preprocessed_images:
-            # add all the classes classes
-            self.add_image(
-                "car_parts",
-                image_id=file_name,
-                path=image_path,
-                masks=masks,
-                classes=np.array(classes)
-            )
+        source_name = "car_parts"
+
+        # add class names    
+        damages_list = ['scratch', 'dent', 'severe-dent', 'substitution', 'severe_dent']
+        id_to_category = {}
+        for category in coco_data['categories']:
+            #print(category)
+            class_id = category['id']
+            class_name = category['name']
+            if (class_name not in damages_list):
+                ################### add_class base method from utils.Dataset
+                self.add_class(source_name, class_id, class_name)
+                id_to_category[class_id] = class_name
+
+        # Get all annotations
+        annotations = {}
+        id_img_id_categ = {}
+        for annotation in coco_data['annotations']:
+            image_id = annotation['image_id']
+            if image_id not in annotations:
+                annotations[image_id] = []
+            annotations[image_id].append(annotation)
+
+        # Get all images 
+        seen_images = {}
+        num_img_not_it_annotations = 0
+        for image in coco_data['images']:
+            image_id = image['id']
+            if image_id in seen_images:
+                print("Warning: Skipping duplicate image id: {}".format(image))
+            else:
+                seen_images[image_id] = image
+                try:
+                    image_file_name = image['file_name']
+                    image_width = image['width']
+                    image_height = image['height']
+                except KeyError as key:
+                    print("Warning: Skipping image (id: {}) with missing key: {}".format(image_id, key))
+
+                image_path =  os.path.abspath(os.path.join(images_dir, image_file_name))
+                try:
+                    image_annotations = annotations[image_id]
+
+                    #### Add image base method from utils.Dataset
+                    self.add_image(
+                        source=source_name,
+                        image_id=image_id,
+                        path=image_path,
+                        width=image_width,
+                        height=image_height,
+                        annotations=image_annotations
+                    )
+                except KeyError:
+                    num_img_not_it_annotations += 1    
+        print (f'num_img_not_it_annotations {num_img_not_it_annotations}')
+        return id_to_category
 
     def load_mask(self, image_id):
-        # load all the masks from the image id
-        info = self.image_info[image_id]
-        return info['masks'], info['classes']
+        """ Load instance masks for the given image.
+        MaskRCNN expects masks in the form of a bitmap [height, width, instances].
+        Args:
+            image_id: The id of the image to load masks for
+        Returns:
+            masks: A bool array of shape [height, width, instance count] with
+                one mask per instance.
+            class_ids: a 1D array of class IDs of the instance masks.
+        """
+        image_info = self.image_info[image_id]
+        annotations = image_info['annotations']
+        instance_masks = []
+        class_ids = []
+        
+        for annotation in annotations:
+            class_id = annotation['category_id']
+            mask = Image.new('1', (image_info['width'], image_info['height']))
+            mask_draw = ImageDraw.ImageDraw(mask, '1')
+            for segmentation in annotation['segmentation']:
+                mask_draw.polygon(segmentation, fill=1)
+                bool_array = np.array(mask) > 0
+                instance_masks.append(bool_array)
+                class_ids.append(class_id)
 
-    def image_reference(self, image_id):
-        info = self.image_info[image_id]
-        return info['path']
+        mask = np.dstack(instance_masks)
+        class_ids = np.array(class_ids, dtype=np.int32)
+        
+        return mask, class_ids
 
 
 if __name__ == '__main__':
-    from keras import backend as K
+    #from keras import backend as K
+    #import tensorflow.keras as keras
     ### versione di TF non GPU
     #print(K.tensorflow_backend._get_available_gpus())
 
@@ -252,10 +445,12 @@ if __name__ == '__main__':
         val_percent = float(args.valpercent)
     else:
         val_percent = None
-    print(tr_percent)
-    dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-        images_path, annotations_path#, tr_percent, val_percent
-    )
+   
+    #dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
+    #    images_path, annotations_path, tr_percent, val_percent
+    #)
+    prepare_datasets(annotations_path, images_path)
+
     print('finished loading the dataset')
     sys.exit()
     print(parts_idx_dict)

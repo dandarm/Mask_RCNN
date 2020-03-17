@@ -60,3 +60,6 @@ ENV/
 
 logs_bk/
 dataset
+cogito_output_merged.json
+batch*
+*.zip
