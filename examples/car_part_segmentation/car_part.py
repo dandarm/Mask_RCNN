@@ -48,6 +48,7 @@ def prepare_datasets(part_annotation_path, images_path, train_p=0.7, val_p=0.1, 
     # dictionary to obtain images containing such segment category
     catToImgs = ds.catToImgs
 
+    print("Balancing the categories among train, validation, test sets...")
     balancer = BalanceDataset(imgToAnns, all_images_ids, catToImgs)
     balancer.set_percentages(train_p, val_p, test_p)
 
@@ -65,6 +66,8 @@ def prepare_datasets(part_annotation_path, images_path, train_p=0.7, val_p=0.1, 
     dataset_test = CarPartDataset()
     dataset_test.load_dataset(part_annotation_path, images_path, img_id_test)
     dataset_test.prepare()
+
+    return dataset_train, dataset_val, dataset_test
 
 
 
@@ -130,6 +133,7 @@ class CarPartDataset(utils.Dataset):
         # Get all images 
         seen_images = {}
         num_img_not_it_annotations = 0
+        id_img_not_annotated = []
         img_loaded = 0
         for image in coco_data['images']:
             image_id = image['id']
@@ -159,9 +163,12 @@ class CarPartDataset(utils.Dataset):
                             annotations=image_annotations
                         )
                     except KeyError:
-                        num_img_not_it_annotations += 1    
+                        num_img_not_it_annotations += 1
+                        id_img_not_annotated.append(image_id)
+
                 img_loaded+=1
         print (f'num_img_not_it_annotations {num_img_not_it_annotations}')
+        print(id_img_not_annotated)
         print(f'Images loaded: {img_loaded}')
         return id_to_category
 
@@ -247,19 +254,15 @@ if __name__ == '__main__':
         if(args.valpercent):
             val_percent = float(args.valpercent)
             test_percent = 1 - (tr_percent + val_percent)
-            prepare_datasets(annotations_path, images_path, tr_percent, val_percent, test_percent)
+            results = prepare_datasets(annotations_path, images_path, tr_percent, val_percent, test_percent)
         else:
             val_percent = 1 - tr_percent
-            prepare_datasets(annotations_path, images_path, tr_percent, val_percent)
+            results = prepare_datasets(annotations_path, images_path, tr_percent, val_percent)
     else:
-        prepare_datasets(annotations_path, images_path)
+        results = prepare_datasets(annotations_path, images_path)
 
+    dataset_train, dataset_val, dataset_test = results
     print('finished loading the dataset')
-    sys.exit()
-
-    print(parts_idx_dict)
-    with open('parts_idx_dict.json', 'w') as f:
-        json.dump(parts_idx_dict, f)
 
     config = CarPartConfig()
 
@@ -315,7 +318,7 @@ if __name__ == '__main__':
     # Finetune layers from ResNet stage 4 and up
     print("Fine tune Resnet stage 4 and up")
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
+                learning_rate=learningrate,
                 epochs=120,
                 layers='4+',
                 augmentation=augmentation)
@@ -324,7 +327,7 @@ if __name__ == '__main__':
     # Fine tune all layers
     print("Fine tune all layers")
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE / 10,
+                learning_rate=learningrate / 10,
                 epochs=160,
                 layers='all',
                 augmentation=augmentation)
