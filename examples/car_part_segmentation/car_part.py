@@ -56,18 +56,27 @@ def prepare_datasets(part_annotation_path, images_path, train_p=0.7, val_p=0.1, 
     balancer.verify_split()
 
     dataset_train = CarPartDataset()
-    dataset_train.load_dataset(part_annotation_path, images_path, img_id_train)
+    id_to_category_train = dataset_train.load_dataset(part_annotation_path, images_path, img_id_train)
     dataset_train.prepare()
+    print(sorted(id_to_category_train.values()))
+    num_categories_train = len(id_to_category_train.items())
+    print(num_categories_train)
 
     dataset_val = CarPartDataset()
-    dataset_val.load_dataset(part_annotation_path, images_path, img_id_val)
+    id_to_category_val = dataset_val.load_dataset(part_annotation_path, images_path, img_id_val)
     dataset_val.prepare()
+    #print(sorted(id_to_category_val.keys()))
+    num_categories_val = len(id_to_category_val.items())
 
     dataset_test = CarPartDataset()
-    dataset_test.load_dataset(part_annotation_path, images_path, img_id_test)
+    id_to_category_test = dataset_test.load_dataset(part_annotation_path, images_path, img_id_test)
     dataset_test.prepare()
+    #print(sorted(id_to_category_test.keys()))
+    num_categories_test = len(id_to_category_test.items())
 
-    return dataset_train, dataset_val, dataset_test
+    assert num_categories_train == num_categories_val == num_categories_test
+
+    return dataset_train, dataset_val, dataset_test, num_categories_train
 
 
 
@@ -91,6 +100,10 @@ class CarPartConfig(Config):
 
     IMAGE_MIN_DIM = 512
     IMAGE_MAX_DIM = 512
+
+    def __init__(self, num_classes):
+        self.NUM_CLASSES = num_classes
+        super().__init__()
 
 
 class CarPartDataset(utils.Dataset):
@@ -261,10 +274,10 @@ if __name__ == '__main__':
     else:
         results = prepare_datasets(annotations_path, images_path)
 
-    dataset_train, dataset_val, dataset_test = results
+    dataset_train, dataset_val, dataset_test, num_categories = results
     print('finished loading the dataset')
-
-    config = CarPartConfig()
+    
+    config = CarPartConfig(num_classes=num_categories+1)  #  + 1 because of background class
 
     augmentation = iaa.Sequential([
         iaa.GaussianBlur(sigma=(0.0, 5.0)),
