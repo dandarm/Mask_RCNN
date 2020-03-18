@@ -23,140 +23,20 @@ from PIL import Image, ImageDraw
 from pycocotools.coco import COCO
 from collections import defaultdict
 import random
+import collections
+
+from balancedataset import BalanceDataset
 
 
 np.random.seed(42)
 #random.seet = 42
-
-'''
-def extract_annotations(path):
-    # print(annotation_path)
-    annotations = sio.loadmat(path)['anno']
-    objects = annotations[0, 0]['objects']
-
-    # list containing all the objects in the image
-    objects_list = []
-
-    for obj_idx in range(objects.shape[1]):
-        obj = objects[0, obj_idx]
-
-        classname = obj['class'][0]
-        mask = obj['mask']
-
-        parts_list = []
-        parts = obj['parts']
-
-        for part_idx in range(parts.shape[1]):
-            part = parts[0, part_idx]
-            part_name = part['part_name'][0]
-            part_mask = part['mask']
-
-            parts_list.append({'part_name': part_name, 'mask': part_mask})
-
-        objects_list.append(
-            {'class_name': classname, 'mask': mask, "parts": parts_list})
-
-    return objects_list
-
-
-
-def preprocess_dataset(images_path, annotations_path, filter={'car'}):
-    """Process the dataset returning a list of tuple with
-        (file_name, image_path, mask_list, class_list)
-
-        Args:
-        images_path -- the folder containing the images of the dataset
-        annotations_path -- the folder containing the annotations for the dataset
-        classes -- a set with the classes to process
-
-        Returns:
-            a tuple with:
-                a list of ennuples (file_name, image_path, mask_list, class_list)
-    """
-    images_path = Path(images_path)
-
-    class_names = set()
-    results = list()
-
-    for path in tqdm(annotations_path):
-        # get the annotations
-        image_objs = extract_annotations(path)
-
-        # get the immage path
-        file_name = path.name.replace('mat', 'jpg')
-        image_path = images_path / file_name
-
-        mask_list = []
-        class_list = []
-
-        for obj in image_objs:
-            if obj['class_name'] in filter:
-                if 'parts' in obj:
-                    for part in obj['parts']:
-                        # handle the mask
-                        mask_list.append(part['mask'].astype(bool))
-
-                        # handle the class name
-                        part_name = part['part_name']
-                        class_list.append(part_name)
-                        class_names.add(part_name)
-
-        if len(mask_list):
-            # reshape the mask list
-            mask_list = np.array(mask_list)
-            mask_list = np.moveaxis(mask_list, 0, -1)
-
-            results.append(
-                (file_name, image_path, mask_list, class_list)
-            )
-
-    class_list = sorted(list(class_names))
-    idx_class = dict(enumerate(class_list, 1))
-    class_idx = {v: k for k, v in idx_class.items()}
-
-    results_class_idx = []
-    for file_name, image_path, mask_list, class_list in results:
-        class_idx_list = [class_idx[x] for x in class_list]
-        results_class_idx.append(
-            (file_name, image_path, mask_list, class_idx_list)
-        )
-
-    return results_class_idx, class_idx
-
-
-def prepare_datasets(images_path, images_annotations_path,
-                     train_perc=0.9, val_perc=1.0, filter={'car'}):
-
-    images_annotations_files = list(Path(images_annotations_path).glob('*.mat'))
-
-    results, parts_idx_dict = preprocess_dataset(
-        images_path, images_annotations_files, filter)
-
-    print(f'len results {len(results)}')
-    train_split = int(len(results) * train_perc)
-    val_split = int(len(results) * val_perc)
-    print(
-        f'train size {train_split}, val size {val_split - train_split} test size { len(results) - val_split}')
-
-    dataset_train = CarPartDataset()
-    dataset_train.load_dataset(parts_idx_dict, results[:train_split])
-    dataset_train.prepare()
-    dataset_val = CarPartDataset()
-    dataset_val.load_dataset(
-        parts_idx_dict, results[train_split:val_split])
-    dataset_val.prepare()
-
-    dataset_test = CarPartDataset()
-    dataset_test.load_dataset(parts_idx_dict, results[val_split:])
-    dataset_test.prepare()
-
-    return dataset_train, dataset_val, dataset_test, parts_idx_dict
-'''  
+        
 
 def getCatId_fromImgId(img_id, imgToAnns):
     return [d['category_id'] for d in imgToAnns[img_id]]
 
 def dist_tot(img_ids, imgToAnns, num_categories_target):
+    
     #[[x,l.count(x)] for x in set(l)]
     num_cat = defaultdict(int) #zero default value
     for id in img_ids:
@@ -168,24 +48,19 @@ def dist_tot(img_ids, imgToAnns, num_categories_target):
     distanze = 0#[round((num_cat[k] - v)/v, 3) for k,v in num_categories_target.items()]
     return np.sqrt(sum(sq_dist))#, distanze
 
-def add_img(trial_set, remaining_set):
-    to_add = random.choice(remaining_set)
+
+def add_img(trial_set, remaining_set, to_add):
     trial_set.append(to_add)
     remaining_set.remove(to_add)
-    return to_add
-def rem_img(trial_set, remaining_set):
-    to_remove = random.choice(trial_set)
+def rem_img(trial_set, remaining_set, to_remove):
     trial_set.remove(to_remove)
     remaining_set.append(to_remove)
-    return to_remove
-def reset_add(trial_set, remaining_set, removed):
-    for r in removed:
-        trial_set.append(r)
-        remaining_set.remove(r)
-def reset_rem(trial_set, remaining_set, added):
-    for a in added:
-        trial_set.remove(a)
-        remaining_set.append(a)
+def add_many_imgs(trial_set, remaining_set, lista):
+    for l in lista:
+        add_img(trial_set, remaining_set, l)
+def rem_many_imgs(trial_set, remaining_set, lista):
+    for l in lista:
+        rem_img(trial_set, remaining_set, l)
 
 def split_dataset_balanced(part_annotation_path, set_perc=0.7):
     ds = COCO(part_annotation_path)
@@ -199,72 +74,85 @@ def split_dataset_balanced(part_annotation_path, set_perc=0.7):
     num_start_set = round(0.7 * total_imgs)
     start_imgs = random.sample(all_img_ids, num_start_set)
 
-    #dist_previous = dist_tot(start_imgs, imgToAnns, num_categories_target)
-
-    add_trials = 10
-    remove_trials = 10
-    tot_trials = 10
-    best_change = ()
+    add_trials = 4
+    remove_trials = 4
+    tot_trials = 200
+    best_change = {}
     epsilon = 0.01
     distances = {}
-    trial_set = start_imgs
-    remaining_set = list(filter(lambda x: x in start_imgs, all_img_ids))
+    min_over_dist = 0
+    new_min = 0
+    trial_set = start_imgs.copy()
+    #remaining_set = list(filter(lambda x: x in start_imgs, all_img_ids))
+    remaining_set = [x for x in all_img_ids if x not in start_imgs]
 
-    for _ in range(tot_trials):
-        
+    for t in range(tot_trials):
+ 
+        # Select the changes of previous iteration
+        if (new_min != min_over_dist):
+            min_over_dist = new_min
+            print(f'Il minimo è {new_min:.2f}')
+            best_change[min_over_dist] = distances[min_over_dist]
+            add_rem = best_change.get(min_over_dist)        
+            add_img(trial_set, remaining_set, add_rem[0])
+            rem_img(trial_set, remaining_set, add_rem[1])
+
+        start_imgs = trial_set.copy()
+        remaining_copy = remaining_set.copy()
 
         added = []
         for _ in range(add_trials):
-            ai = add_img(trial_set, remaining_set)
-            added.append(ai)
+            to_add = random.choice(remaining_set)
+            add_img(trial_set, remaining_set, to_add)
+            added.append(to_add)
             #dist = dist_tot(trial_set, imgToAnns, num_categories_target)
             #distances[dist] = (ai, None)
 
             removed = []
             for _ in range(remove_trials):
-                ri = rem_img(trial_set, remaining_set)
-                removed.append(ri)
+                to_remove = random.choice(trial_set)
+                rem_img(trial_set, remaining_set, to_remove)
+                removed.append(to_remove)
+
                 dist = dist_tot(trial_set, imgToAnns, num_categories_target)
-                distances[dist] = (ai, ri)
+                distances[dist] = (to_add, to_remove)
+                #print(f'Distanza: {dist:.2f}')
 
-            reset_add(trial_set, remaining_set, removed)            
+            add_many_imgs(trial_set, remaining_set, removed)            
 
-        reset_rem(trial_set, remaining_set, added) 
+        rem_many_imgs(trial_set, remaining_set, added) 
 
-        min_over_dist = min(distances.keys())
-        best_change[min_over_dist] = distances[min_over_dist]
-        
-                
-
+        assert collections.Counter(trial_set) == collections.Counter(start_imgs)
+        assert collections.Counter(remaining_copy) == collections.Counter(remaining_set)
             
+        new_min = min(distances.keys())
 
-    #print(f'Distanza: {dist:.2f}')
-    return trial_set
-
-
-
-
-#    for cat_id, cat_images in ds.catToImgs.items():
- #       tot_img_cat = len(cat_images)
-  #      Num_imgtrain = train_perc * tot_img_cat
-   #     Num_imgval = val_perc * tot_img_cat
-        
+    return trial_set, remaining_set
 
 
 
 
 
-def prepare_datasets(part_annotation_path, images_path):
+def prepare_datasets(part_annotation_path, images_path, train_p, val_p, test_p):
 
+    ds = COCO(part_annotation_path)
+    imgToAnns = ds.imgToAnns
+    all_images_ids = ds.getImgIds()
+    catToImgs = ds.catToImgs
 
+    balancer = BalanceDataset(imgToAnns, all_images_ids, catToImgs)
+    balancer.set_percentages(train_p, val_p, test_p)
+
+    img_id_train, img_id_val, img_id_test = balancer.split_balanced()
+    balancer.verify_split()
 
     dataset_train = CarPartDataset()
-    dataset_train.load_dataset(part_annotation_path, images_path)
+    dataset_train.load_dataset(part_annotation_path, images_path, img_id_train)
     dataset_train.prepare()
 
-    #dataset_val = CarPartDataset()
-    #dataset_val.load_dataset(part_annotation_path, images_path)
-    #dataset_val.prepare()
+    dataset_val = CarPartDataset()
+    dataset_val.load_dataset(part_annotation_path, images_path, img_id_val)
+    dataset_val.prepare()
 
 
 
@@ -292,7 +180,7 @@ class CarPartConfig(Config):
 
 class CarPartDataset(utils.Dataset):
 
-    def load_dataset(self, annotation_json, images_dir):
+    def load_dataset(self, annotation_json, images_dir, img_id):
         """
             Load the coco-like dataset from json
         Args:
@@ -439,20 +327,17 @@ if __name__ == '__main__':
 
     if(args.trainpercent):
         tr_percent = float(args.trainpercent)
-    else:
-        tr_percent = None
-    if(args.valpercent):
-        val_percent = float(args.valpercent)
-    else:
-        val_percent = None
-   
-    #dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-    #    images_path, annotations_path, tr_percent, val_percent
-    #)
-    prepare_datasets(annotations_path, images_path)
+        if(args.valpercent):
+            val_percent = float(args.valpercent)
+            test_percent = 1 - (tr_percent + val_percent)
+            prepare_datasets(annotations_path, images_path, tr_percent, val_percent, test_percent)
+        else:
+            val_percent = 1 - tr_percent
+            prepare_datasets(annotations_path, images_path, tr_percent, val_percent)
 
     print('finished loading the dataset')
     sys.exit()
+
     print(parts_idx_dict)
     with open('parts_idx_dict.json', 'w') as f:
         json.dump(parts_idx_dict, f)

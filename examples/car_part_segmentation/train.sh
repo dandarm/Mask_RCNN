@@ -10,5 +10,5 @@ python car_part.py\
  --images_path $images_path\
  --annotations $annotations_path\
  --checkpoint $DIR/logs/ --weights imagenet\
- --trainpercent 0.1\
+ --trainpercent 0.7\
  --valpercent 0.2
