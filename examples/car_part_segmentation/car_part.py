@@ -32,112 +32,20 @@ np.random.seed(42)
 #random.seet = 42
         
 
-def getCatId_fromImgId(img_id, imgToAnns):
-    return [d['category_id'] for d in imgToAnns[img_id]]
-
-def dist_tot(img_ids, imgToAnns, num_categories_target):
-    
-    #[[x,l.count(x)] for x in set(l)]
-    num_cat = defaultdict(int) #zero default value
-    for id in img_ids:
-        cats_in_img = getCatId_fromImgId(id, imgToAnns)
-        for cat in cats_in_img:
-            num_cat[cat] += 1
-
-    sq_dist = [(num_cat[k] - v)*(num_cat[k] - v) for k,v in num_categories_target.items()]
-    distanze = 0#[round((num_cat[k] - v)/v, 3) for k,v in num_categories_target.items()]
-    return np.sqrt(sum(sq_dist))#, distanze
-
-
-def add_img(trial_set, remaining_set, to_add):
-    trial_set.append(to_add)
-    remaining_set.remove(to_add)
-def rem_img(trial_set, remaining_set, to_remove):
-    trial_set.remove(to_remove)
-    remaining_set.append(to_remove)
-def add_many_imgs(trial_set, remaining_set, lista):
-    for l in lista:
-        add_img(trial_set, remaining_set, l)
-def rem_many_imgs(trial_set, remaining_set, lista):
-    for l in lista:
-        rem_img(trial_set, remaining_set, l)
-
-def split_dataset_balanced(part_annotation_path, set_perc=0.7):
-    ds = COCO(part_annotation_path)
-    imgToAnns = ds.imgToAnns
-
-    num_categories_target = {cat_id:round(len(images)*set_perc) for cat_id, images in ds.catToImgs.items()}
-
-    #parto con un insieme iniziale
-    all_img_ids = ds.getImgIds()
-    total_imgs = len(all_img_ids)
-    num_start_set = round(0.7 * total_imgs)
-    start_imgs = random.sample(all_img_ids, num_start_set)
-
-    add_trials = 4
-    remove_trials = 4
-    tot_trials = 200
-    best_change = {}
-    epsilon = 0.01
-    distances = {}
-    min_over_dist = 0
-    new_min = 0
-    trial_set = start_imgs.copy()
-    #remaining_set = list(filter(lambda x: x in start_imgs, all_img_ids))
-    remaining_set = [x for x in all_img_ids if x not in start_imgs]
-
-    for t in range(tot_trials):
- 
-        # Select the changes of previous iteration
-        if (new_min != min_over_dist):
-            min_over_dist = new_min
-            print(f'Il minimo è {new_min:.2f}')
-            best_change[min_over_dist] = distances[min_over_dist]
-            add_rem = best_change.get(min_over_dist)        
-            add_img(trial_set, remaining_set, add_rem[0])
-            rem_img(trial_set, remaining_set, add_rem[1])
-
-        start_imgs = trial_set.copy()
-        remaining_copy = remaining_set.copy()
-
-        added = []
-        for _ in range(add_trials):
-            to_add = random.choice(remaining_set)
-            add_img(trial_set, remaining_set, to_add)
-            added.append(to_add)
-            #dist = dist_tot(trial_set, imgToAnns, num_categories_target)
-            #distances[dist] = (ai, None)
-
-            removed = []
-            for _ in range(remove_trials):
-                to_remove = random.choice(trial_set)
-                rem_img(trial_set, remaining_set, to_remove)
-                removed.append(to_remove)
-
-                dist = dist_tot(trial_set, imgToAnns, num_categories_target)
-                distances[dist] = (to_add, to_remove)
-                #print(f'Distanza: {dist:.2f}')
-
-            add_many_imgs(trial_set, remaining_set, removed)            
-
-        rem_many_imgs(trial_set, remaining_set, added) 
-
-        assert collections.Counter(trial_set) == collections.Counter(start_imgs)
-        assert collections.Counter(remaining_copy) == collections.Counter(remaining_set)
-            
-        new_min = min(distances.keys())
-
-    return trial_set, remaining_set
 
 
 
 
 
-def prepare_datasets(part_annotation_path, images_path, train_p, val_p, test_p):
+def prepare_datasets(part_annotation_path, images_path, train_p=0.7, val_p=0.1, test_p=0.2):
 
     ds = COCO(part_annotation_path)
+
+    # dictionary to obtain annotations contained in every image
     imgToAnns = ds.imgToAnns
+    # all images Id
     all_images_ids = ds.getImgIds()
+    # dictionary to obtain images containing such segment category
     catToImgs = ds.catToImgs
 
     balancer = BalanceDataset(imgToAnns, all_images_ids, catToImgs)
@@ -153,6 +61,10 @@ def prepare_datasets(part_annotation_path, images_path, train_p, val_p, test_p):
     dataset_val = CarPartDataset()
     dataset_val.load_dataset(part_annotation_path, images_path, img_id_val)
     dataset_val.prepare()
+
+    dataset_test = CarPartDataset()
+    dataset_test.load_dataset(part_annotation_path, images_path, img_id_test)
+    dataset_test.prepare()
 
 
 
@@ -180,7 +92,7 @@ class CarPartConfig(Config):
 
 class CarPartDataset(utils.Dataset):
 
-    def load_dataset(self, annotation_json, images_dir, img_id):
+    def load_dataset(self, annotation_json, images_dir, set_img_id):
         """
             Load the coco-like dataset from json
         Args:
@@ -194,58 +106,63 @@ class CarPartDataset(utils.Dataset):
         source_name = "car_parts"
 
         # add class names    
-        damages_list = ['scratch', 'dent', 'severe-dent', 'substitution', 'severe_dent']
+        #damages_list = ['scratch', 'dent', 'severe-dent', 'substitution', 'severe_dent']
         id_to_category = {}
         for category in coco_data['categories']:
             #print(category)
             class_id = category['id']
             class_name = category['name']
-            if (class_name not in damages_list):
+            #if (class_name not in damages_list):
                 ################### add_class base method from utils.Dataset
-                self.add_class(source_name, class_id, class_name)
-                id_to_category[class_id] = class_name
+            self.add_class(source_name, class_id, class_name)
+            id_to_category[class_id] = class_name
 
         # Get all annotations
         annotations = {}
         id_img_id_categ = {}
         for annotation in coco_data['annotations']:
             image_id = annotation['image_id']
-            if image_id not in annotations:
-                annotations[image_id] = []
-            annotations[image_id].append(annotation)
+            if image_id in set_img_id:
+                if image_id not in annotations:
+                    annotations[image_id] = []
+                annotations[image_id].append(annotation)
 
         # Get all images 
         seen_images = {}
         num_img_not_it_annotations = 0
+        img_loaded = 0
         for image in coco_data['images']:
             image_id = image['id']
-            if image_id in seen_images:
-                print("Warning: Skipping duplicate image id: {}".format(image))
-            else:
-                seen_images[image_id] = image
-                try:
-                    image_file_name = image['file_name']
-                    image_width = image['width']
-                    image_height = image['height']
-                except KeyError as key:
-                    print("Warning: Skipping image (id: {}) with missing key: {}".format(image_id, key))
+            if image_id in set_img_id:
+                if image_id in seen_images:
+                    print("Warning: Skipping duplicate image id: {}".format(image))
+                else:
+                    seen_images[image_id] = image
+                    try:
+                        image_file_name = image['file_name']
+                        image_width = image['width']
+                        image_height = image['height']
+                    except KeyError as key:
+                        print("Warning: Skipping image (id: {}) with missing key: {}".format(image_id, key))
 
-                image_path =  os.path.abspath(os.path.join(images_dir, image_file_name))
-                try:
-                    image_annotations = annotations[image_id]
+                    image_path =  os.path.abspath(os.path.join(images_dir, image_file_name))
+                    try:
+                        image_annotations = annotations[image_id]
 
-                    #### Add image base method from utils.Dataset
-                    self.add_image(
-                        source=source_name,
-                        image_id=image_id,
-                        path=image_path,
-                        width=image_width,
-                        height=image_height,
-                        annotations=image_annotations
-                    )
-                except KeyError:
-                    num_img_not_it_annotations += 1    
+                        #### Add image base method from utils.Dataset
+                        self.add_image(
+                            source=source_name,
+                            image_id=image_id,
+                            path=image_path,
+                            width=image_width,
+                            height=image_height,
+                            annotations=image_annotations
+                        )
+                    except KeyError:
+                        num_img_not_it_annotations += 1    
+                img_loaded+=1
         print (f'num_img_not_it_annotations {num_img_not_it_annotations}')
+        print(f'Images loaded: {img_loaded}')
         return id_to_category
 
     def load_mask(self, image_id):
@@ -334,6 +251,8 @@ if __name__ == '__main__':
         else:
             val_percent = 1 - tr_percent
             prepare_datasets(annotations_path, images_path, tr_percent, val_percent)
+    else:
+        prepare_datasets(annotations_path, images_path)
 
     print('finished loading the dataset')
     sys.exit()
