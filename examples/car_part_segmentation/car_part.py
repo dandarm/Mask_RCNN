@@ -26,6 +26,7 @@ import random
 import collections
 
 from balancedataset import BalanceDataset
+from cocoformattest import AllowedCocoData
 
 
 np.random.seed(42)
@@ -211,6 +212,7 @@ class CarPartDataset(utils.Dataset):
                 class_ids.append(class_id)
 
         mask = np.dstack(instance_masks)
+        print(mask.shape)
         class_ids = np.array(class_ids, dtype=np.int32)
         
         return mask, class_ids

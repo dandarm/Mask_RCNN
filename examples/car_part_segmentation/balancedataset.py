@@ -76,7 +76,7 @@ class BalanceDataset():
 
         add_trials = 4
         remove_trials = 4
-        tot_trials = 200
+        tot_trials = 20
         best_change = {}
         #epsilon = 0.01
         distances = {}

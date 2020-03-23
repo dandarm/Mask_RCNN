@@ -110,6 +110,10 @@ class AllowedCocoData():
             self.coco_dict["segment_info"] = self.panoptic_annotation["segment_info"]
         else:
             print("\nNessuna verifica\n")
+
+        self.images = self.data['images']
+        self.annotations = self.data['annotations']
+        self.categories = self.data['categories']        
         return
 
 
@@ -156,13 +160,59 @@ class AllowedCocoData():
 
                         elif type(v[k]) != self.coco_dict[ch][k]: 
                             print(f'Il tipo di {k} non è quello giusto di Coco')
-                            print(v[k])                            
+                            print(v[k])        
+
+                        elif (k == 'image_id'):
+                            if (len(str(v[k]).strip()) < 1 ):
+                                print('!!! Image_id vuoto!')
             
             if ( i > 0): print(f'{i} date mancanti in {ch}')
 
         
         return
 
+    def check_id_images(self):
+        '''
+        Controlla che per ogni Id contenuto in images esista almeno una 
+        annotation e che ogni annotation abbia una imageId tra gli Id di images:
+        -> Verifica che le imageIds e le id img prese da annotation siano uguale
+        '''
+        images_ids = [img['id'] for img in self.images]
+        imgids_from_annotations = [ann['image_id'] for ann in self.annotations]
+
+        print(f'Ci sono {len(images_ids)} Id immagini')
+        #controlla chiavi ripetute
+        if(len(set(images_ids)) != len(images_ids)):
+            print(f'Ci sono {len(set(images_ids))} Id unici' )
+        
+        if (set(images_ids) != set(imgids_from_annotations)):
+            not_common = set(images_ids) ^ set(imgids_from_annotations)
+            if(len(set(images_ids)) > len(set(imgids_from_annotations))):
+                print(f'Ci sono immagini senza annotazione: {not_common} ')
+            else:
+                print(f'Ci sono annotazioni con Id immagine non contenuti in \'images\' : {not_common} ')
+    
+    def check_annotations(self):
+        '''
+            Verifica che gli id categoria presi da categories e gli id category presi da annotation siano uguale
+        '''
+        id_cat_name = {cat['id']:cat['name'] for cat in self.categories}
+        catids_from_annotations = [ann['category_id'] for ann in self.annotations]
+
+        print(f'Ci sono {len(id_cat_name.items())} Id categoria')
+        if(len(set(id_cat_name.keys())) != len(id_cat_name.keys())):
+            print(f'Ci sono {len(set(id_cat_name.keys()))} Id unici' )
+
+        for k,v in id_cat_name.items():
+            print(f'Id {k}\t{v}')
+        
+        if (set(id_cat_name.keys()) != set(catids_from_annotations)):
+            not_common = set(id_cat_name.keys()) ^ set(catids_from_annotations)
+            if(len(set(id_cat_name.keys())) > len(set(catids_from_annotations))):
+                print(f'Ci sono categorie mai annotate: {not_common} ')
+            else:
+                print(f'Ci sono annotazioni con Id categoria non contenuti in \'categories\' : {not_common} ')
+    
 
 
 
@@ -177,6 +227,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     checker = AllowedCocoData(args.input)
     checker.check_coco_format()
-
+    checker.check_id_images()
+    checker.check_annotations()
 
 
