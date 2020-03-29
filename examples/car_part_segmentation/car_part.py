@@ -197,7 +197,7 @@ class CarPartDataset(utils.Dataset):
 
 
 if __name__ == '__main__':
-    from keras import backend as K
+    #from keras import backend as K
     ### versione di TF non GPU
     #print(K.tensorflow_backend._get_available_gpus())
 
@@ -251,7 +251,7 @@ if __name__ == '__main__':
         val_percent = None
     print(tr_percent)
     dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-        images_path, annotations_path#, tr_percent, val_percent
+        images_path, annotations_path, tr_percent, val_percent
     )
     print('finished loading the dataset')
     

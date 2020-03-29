@@ -4,7 +4,11 @@ Pillow
 cython
 matplotlib
 scikit-image
+<<<<<<< HEAD
 tensorflow>=2.0.0,<=2.1.0
+=======
+tensorflow==2.0.0
+>>>>>>> refs/remotes/origin/master
 keras==2.3.1
 opencv-python
 h5py
