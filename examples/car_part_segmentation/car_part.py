@@ -20,9 +20,6 @@ from tqdm import tqdm
 import json
 
 
-np.random.seed(42)
-#random.seet = 42
-
 def extract_annotations(path):
     # print(annotation_path)
     annotations = sio.loadmat(path)['anno']
