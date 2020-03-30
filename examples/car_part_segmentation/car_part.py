@@ -18,142 +18,80 @@ from maskrcnn.config import Config
 import imgaug.augmenters as iaa
 from tqdm import tqdm
 import json
+from PIL import Image, ImageDraw
+
+from pycocotools.coco import COCO
+from collections import defaultdict
+import random
+import collections
+
+from balancedataset import BalanceDataset
+import argparse
 
 
-def extract_annotations(path):
-    # print(annotation_path)
-    annotations = sio.loadmat(path)['anno']
-    objects = annotations[0, 0]['objects']
+def prepare_datasets(part_annotation_path_train,
+                     part_annotation_path_val,
+                     part_annotation_path_test,
+                     images_path):
+                     #train_p=0.7,
+                     #val_p=0.1,
+                     #test_p=0.2):
 
-    # list containing all the objects in the image
-    objects_list = []
+    '''
+    ds = COCO(part_annotation_path_train)
 
-    for obj_idx in range(objects.shape[1]):
-        obj = objects[0, obj_idx]
-
-        classname = obj['class'][0]
-        mask = obj['mask']
-
-        parts_list = []
-        parts = obj['parts']
-
-        for part_idx in range(parts.shape[1]):
-            part = parts[0, part_idx]
-            part_name = part['part_name'][0]
-            part_mask = part['mask']
-
-            parts_list.append({'part_name': part_name, 'mask': part_mask})
-
-        objects_list.append(
-            {'class_name': classname, 'mask': mask, "parts": parts_list})
-
-    return objects_list
+    # dictionary to obtain annotations contained in every image
+    imgToAnns = ds.imgToAnns
+    # all images Id
+    all_images_ids = ds.getImgIds()
+    # dictionary to obtain images containing such segment category
+    catToImgs = ds.catToImgs
 
 
-def preprocess_dataset(images_path, annotations_path, filter={'car'}):
-    """Process the dataset returning a list of tuple with
-        (file_name, image_path, mask_list, class_list)
+    print("Balancing the categories among train, validation, test sets...")
+    balancer = BalanceDataset(imgToAnns, all_images_ids, catToImgs)
+    balancer.set_percentages(train_p, val_p, test_p)
 
-        Args:
-        images_path -- the folder containing the images of the dataset
-        annotations_path -- the folder containing the annotations for the dataset
-        classes -- a set with the classes to process
-
-        Returns:
-            a tuple with:
-                a list of ennuples (file_name, image_path, mask_list, class_list)
-    """
-    images_path = Path(images_path)
-
-    class_names = set()
-    results = list()
-
-    for path in tqdm(annotations_path):
-        # get the annotations
-        image_objs = extract_annotations(path)
-
-        # get the immage path
-        file_name = path.name.replace('mat', 'jpg')
-        image_path = images_path / file_name
-
-        mask_list = []
-        class_list = []
-
-        for obj in image_objs:
-            if obj['class_name'] in filter:
-                if 'parts' in obj:
-                    for part in obj['parts']:
-                        # handle the mask
-                        mask_list.append(part['mask'].astype(bool))
-
-                        # handle the class name
-                        part_name = part['part_name']
-                        class_list.append(part_name)
-                        class_names.add(part_name)
-
-        if len(mask_list):
-            # reshape the mask list
-            mask_list = np.array(mask_list)
-            mask_list = np.moveaxis(mask_list, 0, -1)
-
-            results.append(
-                (file_name, image_path, mask_list, class_list)
-            )
-
-    class_list = sorted(list(class_names))
-    idx_class = dict(enumerate(class_list, 1))
-    class_idx = {v: k for k, v in idx_class.items()}
-
-    results_class_idx = []
-    for file_name, image_path, mask_list, class_list in results:
-        class_idx_list = [class_idx[x] for x in class_list]
-        results_class_idx.append(
-            (file_name, image_path, mask_list, class_idx_list)
-        )
-
-    return results_class_idx, class_idx
-
-
-def prepare_datasets(images_path, images_annotations_path,
-                     train_perc=0.9, val_perc=1.0, filter={'car'}):
-
-    images_annotations_files = list(Path(images_annotations_path).glob('*.mat'))
-
-    results, parts_idx_dict = preprocess_dataset(
-        images_path, images_annotations_files, filter)
-
-    print(f'len results {len(results)}')
-    train_split = int(len(results) * train_perc)
-    val_split = int(len(results) * val_perc)
-    print(
-        f'train size {train_split}, val size {val_split - train_split} test size { len(results) - val_split}')
+    img_id_train, img_id_val, img_id_test = balancer.split_balanced()
+    balancer.verify_split()
+    '''
 
     dataset_train = CarPartDataset()
-    dataset_train.load_dataset(parts_idx_dict, results[:train_split])
+    id_to_category_train = dataset_train.load_dataset(part_annotation_path_train, images_path)
     dataset_train.prepare()
+    #print(sorted(id_to_category_train.values()))
+    num_categories_train = len(id_to_category_train.items())
+    print(f'{num_categories_train} categorie ')
+
     dataset_val = CarPartDataset()
-    dataset_val.load_dataset(
-        parts_idx_dict, results[train_split:val_split])
+    id_to_category_val = dataset_val.load_dataset(part_annotation_path_val, images_path)
     dataset_val.prepare()
+    num_categories_val = len(id_to_category_val.items())
 
     dataset_test = CarPartDataset()
-    dataset_test.load_dataset(parts_idx_dict, results[val_split:])
+    id_to_category_test = dataset_test.load_dataset(part_annotation_path_test, images_path)
     dataset_test.prepare()
+    num_categories_test = len(id_to_category_test.items())
 
-    return dataset_train, dataset_val, dataset_test, parts_idx_dict
+    assert num_categories_train == num_categories_val == num_categories_test
+
+    with open('parts_idx_dict.json', 'w') as f:
+        json.dump(id_to_category_train, f)
+
+    return dataset_train, dataset_val, dataset_test, num_categories_train
 
 
 class CarPartConfig(Config):
     NAME = 'car_parts'
 
     GPU_COUNT = 1
-    IMAGES_PER_GPU = 1
+    IMAGES_PER_GPU = 6
 
     # Number of classes (including background)
-    NUM_CLASSES = 30 + 1  # 30 parts + 1 background
+    #NUM_CLASSES = 30 + 1  # 30 parts + 1 background
 
-    # STEPS_PER_EPOCH = 100
-    # VALIDATION_STEPS = 10
+    STEPS_PER_EPOCH = 1176
+    VALIDATION_STEPS = 167
 
     # BACKBONE = "resnet50"
 
@@ -164,73 +102,160 @@ class CarPartConfig(Config):
     IMAGE_MIN_DIM = 512
     IMAGE_MAX_DIM = 512
 
+    def __init__(self, num_classes):
+        self.NUM_CLASSES = num_classes
+        super().__init__()
+
 
 class CarPartDataset(utils.Dataset):
-
-    def load_dataset(self, parts_idx_dict, preprocessed_images):
+    def load_dataset(self, annotation_json, images_dir):
         """
-
-        classes: in case of None it loads all the classes otherwise
-            it filter on a particular class
+            Load the coco-like dataset from json
+        Args:
+            annotation_json: coco annotations file path
+            images_dir: images directory
         """
-        for part_name, i in parts_idx_dict.items():
-            self.add_class('car_parts', i, part_name)
+        json_file = open(annotation_json)
+        coco_data = json.load(json_file)
+        json_file.close()
 
-        for file_name, image_path, masks, classes in preprocessed_images:
-            # add all the classes classes
-            self.add_image(
-                "car_parts",
-                image_id=file_name,
-                path=image_path,
-                masks=masks,
-                classes=np.array(classes)
-            )
+        source_name = "car_parts"
+
+        # add class names
+        #damages_list = ['scratch', 'dent', 'severe-dent', 'substitution', 'severe_dent']
+        id_to_category = {}
+        for category in coco_data['categories']:
+            #print(category)
+            class_id = int(category['id'])
+            class_name = category['name']
+            #if (class_name not in damages_list):
+            ################### add_class base method from utils.Dataset
+            self.add_class(source_name, class_id, class_name)
+            id_to_category[class_id] = class_name
+
+        # Get all annotations
+        annotations = {}
+        id_img_id_categ = {}
+        for annotation in coco_data['annotations']:
+            image_id = annotation['image_id']
+            #if image_id in set_img_id:
+            if image_id not in annotations:
+                annotations[image_id] = []
+            annotations[image_id].append(annotation)
+
+        # Get all images
+        seen_images = {}
+        num_img_not_it_annotations = 0
+        id_img_not_annotated = []
+        img_loaded = 0
+        for image in coco_data['images']:
+            image_id = image['id']
+            #if image_id in set_img_id:
+            if image_id in seen_images:
+                print("Warning: Skipping duplicate image id: {}".format(
+                    image))
+            else:
+                seen_images[image_id] = image
+                try:
+                    image_file_name = image['file_name']
+                    image_width = image['width']
+                    image_height = image['height']
+                except KeyError as key:
+                    print(
+                        "Warning: Skipping image (id: {}) with missing key: {}"
+                        .format(image_id, key))
+
+                image_path = os.path.abspath(
+                    os.path.join(images_dir, image_file_name))
+                try:
+                    image_annotations = annotations[image_id]
+
+                    #### Add image base method from utils.Dataset
+                    self.add_image(source=source_name,
+                                    image_id=image_id,
+                                    path=image_path,
+                                    width=image_width,
+                                    height=image_height,
+                                    annotations=image_annotations)
+                except KeyError:
+                    num_img_not_it_annotations += 1
+                    id_img_not_annotated.append(image_id)
+
+            img_loaded += 1
+        print(f'num_img_not_it_annotations {num_img_not_it_annotations}')
+        print(id_img_not_annotated)
+        print(f'Images loaded: {img_loaded}')
+        return id_to_category
 
     def load_mask(self, image_id):
-        # load all the masks from the image id
-        info = self.image_info[image_id]
-        return info['masks'], info['classes']
+        """ Load instance masks for the given image.
+        MaskRCNN expects masks in the form of a bitmap [height, width, instances].
+        Args:
+            image_id: The id of the image to load masks for
+        Returns:
+            masks: A bool array of shape [height, width, instance count] with
+                one mask per instance.
+            class_ids: a 1D array of class IDs of the instance masks.
+        """
+        image_info = self.image_info[image_id]
+        annotations = image_info['annotations']
+        instance_masks = []
+        class_ids = []
 
-    def image_reference(self, image_id):
-        info = self.image_info[image_id]
-        return info['path']
+        for annotation in annotations:
+            class_id = annotation['category_id']
+            mask = Image.new('1', (image_info['width'], image_info['height']))
+            mask_draw = ImageDraw.ImageDraw(mask, '1')
+            for segmentation in annotation['segmentation']:
+                mask_draw.polygon(segmentation, fill=1)
+                bool_array = np.array(mask) > 0
+                instance_masks.append(bool_array)
+                class_ids.append(class_id)
+
+        mask = np.dstack(instance_masks)
+        class_ids = np.array(class_ids, dtype=np.int32)
+
+        return mask, class_ids
 
 
 if __name__ == '__main__':
-    #from keras import backend as K
-    ### versione di TF non GPU
-    #print(K.tensorflow_backend._get_available_gpus())
-
-    import argparse
 
     parser = argparse.ArgumentParser(
         description='Train Mask R-CNN to detect car parts')
-    parser.add_argument('--images_path', required=True,
+    parser.add_argument('--images_path',
+                        required=True,
                         metavar="/path/to/car/images/",
                         help='The directory to load the images')
 
-    parser.add_argument('--annotations_path', required=True,
+    parser.add_argument('--annotations_path_train',
+                        required=True,
+                        metavar="/path/to/car/annotations/",
+                        help='The directory to load the annotations')
+    parser.add_argument('--annotations_path_val',
+                        required=True,
+                        metavar="/path/to/car/annotations/",
+                        help='The directory to load the annotations')
+    parser.add_argument('--annotations_path_test',
+                        required=True,
                         metavar="/path/to/car/annotations/",
                         help='The directory to load the annotations')
 
-    parser.add_argument('--weights', required=False,
-                        help='the weights that can be used, values: imagenet or last')
+    parser.add_argument(
+        '--weights',
+        required=False,
+        help='the weights that can be used, values: imagenet or last')
 
-    parser.add_argument('--checkpoint', required=True,
+    parser.add_argument('--checkpoint',
+                        required=True,
                         help='the folder where the checkpoints are saved')
 
-    parser.add_argument('--epochs', required=False,
+    parser.add_argument('--epochs',
+                        required=False,
                         help='number of epochs to train')
 
-    parser.add_argument('--lr', required=False,
+    parser.add_argument('--lr',
+                        required=False,
                         help='the learning rate of training')
-
-    parser.add_argument('--trainpercent', required=False,
-                        help='the percentage of training set')
-    parser.add_argument('--valpercent', required=False,
-                        help='the percentage of validation set')
-                        
-    # parser.
 
     args = parser.parse_args()
 
@@ -240,42 +265,39 @@ if __name__ == '__main__':
     print('load the dataset ...')
     images_path = Path(args.images_path)
     annotations_path = Path(args.annotations_path)
+    '''
+    train_percentage = float(args.trainpercent)
+    val_percentage = float(args.valpercent)
+    test_percentage = 1.0 - (train_percentage + val_percentage)
+    if test_percentage < 0:
+        raise Exception('invalid values for train {} and val {}'.format(
+            train_percentage, val_percentage))
+    '''
+    results = prepare_datasets(args.annotations_path_train, args.annotations_path_val, args.annotations_path_test, args.images_path)
 
-    if(args.trainpercent):
-        tr_percent = float(args.trainpercent)
-    else:
-        tr_percent = None
-    if(args.valpercent):
-        val_percent = float(args.valpercent)
-    else:
-        val_percent = None
-    print(tr_percent)
-    dataset_train, dataset_val, dataset_test, parts_idx_dict = prepare_datasets(
-        images_path, annotations_path, tr_percent, val_percent
-    )
+    dataset_train, dataset_val, dataset_test, num_categories = results
     print('finished loading the dataset')
-    
-    print(parts_idx_dict)
-    with open('parts_idx_dict.json', 'w') as f:
-        json.dump(parts_idx_dict, f)
 
-    config = CarPartConfig()
+    #  + 1 because of background class
+    config = CarPartConfig(num_classes=num_categories + 1)
 
     augmentation = iaa.Sequential([
         iaa.GaussianBlur(sigma=(0.0, 5.0)),
-        iaa.Affine(scale=(1., 2.5), rotate=(-90, 90), shear=(-16, 16), 
-            translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)}),
+        iaa.Affine(scale=(1., 2.5),
+                   rotate=(-90, 90),
+                   shear=(-16, 16),
+                   translate_percent={
+                       "x": (-0.2, 0.2),
+                       "y": (-0.2, 0.2)
+                   }),
         iaa.LinearContrast((0.5, 1.5)),
-        iaa.AdditiveGaussianNoise(scale=(0, 0.05*255)),
+        iaa.AdditiveGaussianNoise(scale=(0, 0.05 * 255)),
         iaa.Alpha((0.0, 1.0), iaa.Grayscale(1.0)),
         iaa.LogContrast(gain=(0.6, 1.4)),
         iaa.PerspectiveTransform(scale=(0.01, 0.15)),
         iaa.Clouds(),
         iaa.Noop(),
-        iaa.Alpha(
-            (0.0, 1.0),
-            first=iaa.Add(100),
-            second=iaa.Multiply(0.2)),
+        iaa.Alpha((0.0, 1.0), first=iaa.Add(100), second=iaa.Multiply(0.2)),
         iaa.MotionBlur(k=5),
         iaa.MultiplyHueAndSaturation((0.5, 1.0), per_channel=True),
         iaa.AddToSaturation((-50, 50)),
@@ -283,37 +305,39 @@ if __name__ == '__main__':
 
     # with tf.device('/gpu:0'):
     # Create model in training mode
-    model = modellib.MaskRCNN(mode="training", config=config,
-                                model_dir=model_checkpoints)
+    model = modellib.MaskRCNN(mode="training",
+                              config=config,
+                              model_dir=model_checkpoints)
 
     if args.weights == 'imagenet':
         model.load_weights(model.get_imagenet_weights(), by_name=True)
     else:
         model.load_weights(model.find_last(), by_name=True)
 
-
-
-    if(args.epochs):
+    if (args.epochs):
         epoche = args.epochs
     else:
         epoche = 1
-    
-    if(args.lr):
+
+    if (args.lr):
         learningrate = args.lr
     else:
         learningrate = config.LEARNING_RATE
-    
+
     print("Training network heads")
-    model.train(dataset_train, dataset_val,
-                learning_rate=learningrate, #config.LEARNING_RATE,
-                epochs=epoche,
-                layers='heads')
+    model.train(
+        dataset_train,
+        dataset_val,
+        learning_rate=learningrate,  #config.LEARNING_RATE,
+        epochs=epoche,
+        layers='heads')
 
     # Training - Stage 2
     # Finetune layers from ResNet stage 4 and up
     print("Fine tune Resnet stage 4 and up")
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
+    model.train(dataset_train,
+                dataset_val,
+                learning_rate=learningrate,
                 epochs=120,
                 layers='4+',
                 augmentation=augmentation)
@@ -321,8 +345,9 @@ if __name__ == '__main__':
     # Training - Stage 3
     # Fine tune all layers
     print("Fine tune all layers")
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE / 10,
+    model.train(dataset_train,
+                dataset_val,
+                learning_rate=learningrate / 10,
                 epochs=160,
                 layers='all',
                 augmentation=augmentation)
